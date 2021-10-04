@@ -1,0 +1,99 @@
+////5007702000000546165
+dealRecord = zoho.crm.getRecordById("Deals",dealID);
+info dealRecord;
+dealName = dealRecord.get("Deal_Name");
+dealAmount = dealRecord.get("Amount");
+dealOwner = dealRecord.get("Owner").get("id");
+dealOwnerName = dealRecord.get("Owner").get("name");
+dealFP = dealRecord.get("Financial_Planning_User").get("id");
+dealFPName = dealRecord.get("Financial_Planning_User").get("name");
+acctName = dealRecord.get("Account_Name").get("name");
+acctID = dealRecord.get("Account_Name").get("id");
+//*********************************************** Organization
+getOrganizations = invokeurl
+[
+	url :"https://books.zoho.com/api/v3/organizations"
+	type :GET
+	connection:"zohobooks"
+];
+orgID = getOrganizations.get("organizations").get("0").get("organization_id");
+info "Org id: " + orgID;
+searchParam = {"contact_name":acctName};
+//set up param to look for acctName in "contact_name"
+customerRecord = zoho.books.getRecords("Contacts",orgID,searchParam,"zohobooks").get("contacts");
+info "Customer Reord:********************************** " + customerRecord;
+//if the customer record is not empty, get the customer id, else if a contact doesn't match from deal to books, create a contact in books, using the acct name from the deal module (crm)
+if(!customerRecord.isEmpty())
+{
+	customer = customerRecord.get("0");
+	customerID = customer.get("contact_id");
+}
+else
+{
+	newCustomerMap = Map();
+	newCustomerMap.put("contact_name",acctName);
+	newCustomer = zoho.books.createRecord("Contacts",orgID,newCustomerMap,"zohobooks");
+	info "New Customer: ***********************************" + newCustomer;
+	customer = newCustomer.get("contact");
+	customerID = customer.get("contact_id");
+}
+today = zoho.currentdate;
+invoiceMap = Map();
+invoiceMap.put("customer_id",customerID);
+invoiceMap.put("date",today);
+invoiceMap.put("line_items",{{"item_id":2860074000000105109,"quantity":1,"rate":dealAmount}});
+createInvoice = zoho.books.createRecord("invoices",orgID,invoiceMap,"zohobooks");
+//****************************************commission
+ownerList = {dealOwner,dealFP};
+nameList = {dealOwnerName,dealFPName};
+commission = 0;
+lowCommission = .05;
+highCommission = .075;
+if(dealAmount < 20000)
+{
+	commission = dealAmount * lowCommission;
+}
+else
+{
+	commission = dealAmount * highCommission;
+}
+info commission;
+info dealRecord;
+commissionRecordList = list();
+for each  owner in ownerList
+{
+	newCommissionMap = Map();
+	if(owner = dealOwner)
+	{
+		newCommissionMap.put("Name",dealName + "" + "FP Commission" + " for " + dealName);
+	}
+	else if(owner = dealFP)
+	{
+		newCommissionMap.put("Name",dealName + "" + "Owner Commission" + " for " + dealName);
+	}
+	newCommissionMap.put("Owner",owner);
+	newCommissionMap.put("Commission_Amount",commission);
+	newCommissionMap.put("Related_Deals",dealID);
+	update = zoho.crm.createRecord("Commissions",newCommissionMap);
+	commissionRecordList.add(update);
+}
+for each  commissionRecord in commissionRecordList
+{
+	commissionID = commissionRecord.get("id");
+	commissionRrd = zoho.crm.getRecordById("Commissions",commissionID);
+	amt = commissionRrd.get("Commission_Amount");
+	info amt;
+	updateCom = Map();
+	if(amt > 500)
+	{
+		amt = amt + 5;
+		updateCom.put("Commission_Amount",amt);
+		updateField = zoho.crm.updateRecord("Commissions",commissionID,updateCom);
+	}
+	else
+	{
+		amt = amt + 1;
+		updateCom.put("Commission_Amount",amt);
+		updateField = zoho.crm.updateRecord("Commissions",commissionID,updateCom);
+	}
+}
